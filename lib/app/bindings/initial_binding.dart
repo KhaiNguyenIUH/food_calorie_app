@@ -11,7 +11,6 @@ import '../../domain/services/nutrition_service.dart';
 import '../../domain/services/storage_cleanup_service.dart';
 import '../../domain/services/token_provider.dart';
 import '../../presentation/home/home_controller.dart';
-import '../../presentation/main/main_controller.dart';
 import '../../presentation/onboarding/onboarding_controller.dart';
 import '../../presentation/scanner/scanner_controller.dart';
 
@@ -42,8 +41,6 @@ class InitialBinding extends Bindings {
         tokenProvider: Get.find<TokenProvider>(),
       ),
     );
-
-    Get.put(MainController());
 
     Get.put(
       HomeController(
