@@ -2,6 +2,7 @@ import 'package:get/get.dart';
 import '../../core/network/api_client.dart';
 import '../../data/repositories/daily_summary_repository.dart';
 import '../../data/repositories/meal_log_repository.dart';
+import '../../data/repositories/user_profile_repository.dart';
 import '../../data/repositories/settings_repository.dart';
 import '../../data/repositories/privacy_repository.dart';
 import '../../domain/services/image_processing_service.dart';
@@ -10,6 +11,8 @@ import '../../domain/services/nutrition_service.dart';
 import '../../domain/services/storage_cleanup_service.dart';
 import '../../domain/services/token_provider.dart';
 import '../../presentation/home/home_controller.dart';
+import '../../presentation/main/main_controller.dart';
+import '../../presentation/onboarding/onboarding_controller.dart';
 import '../../presentation/scanner/scanner_controller.dart';
 
 class InitialBinding extends Bindings {
@@ -20,8 +23,12 @@ class InitialBinding extends Bindings {
   @override
   void dependencies() {
     Get.put<MealLogRepository>(HiveMealLogRepository());
+    Get.put(UserProfileRepository());
     Get.put<DailySummaryRepository>(
-      HiveDailySummaryRepository(mealLogRepository: Get.find()),
+      HiveDailySummaryRepository(
+        mealLogRepository: Get.find(),
+        userProfileRepository: Get.find(),
+      ),
     );
     Get.put<PrivacyRepository>(SettingsRepository());
     Get.put(StorageCleanupService());
@@ -36,13 +43,23 @@ class InitialBinding extends Bindings {
       ),
     );
 
+    Get.put(MainController());
+
     Get.put(
       HomeController(
         mealLogRepository: Get.find(),
         dailySummaryRepository: Get.find(),
+        userProfileRepository: Get.find(),
         privacyRepository: Get.find(),
         storageCleanupService: Get.find(),
         needsCacheRebuild: needsCacheRebuild,
+      ),
+    );
+
+    Get.lazyPut(
+      () => OnboardingController(
+        userProfileRepository: Get.find(),
+        dailySummaryRepository: Get.find(),
       ),
     );
 
@@ -55,6 +72,7 @@ class InitialBinding extends Bindings {
         dailySummaryRepository: Get.find(),
         privacyRepository: Get.find(),
       ),
+      fenix: true,
     );
   }
 }

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:percent_indicator/circular_percent_indicator.dart';
-import '../../core/constants/app_config.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../data/models/meal_log.dart';
@@ -15,44 +14,39 @@ class HomeScreen extends StatelessWidget {
 
   final HomeController? controller;
 
-
   @override
   Widget build(BuildContext context) {
     return GetX<HomeController>(
       init: controller,
       builder: (ctrl) {
-        return Scaffold(
-          backgroundColor: AppColors.background,
-          body: SafeArea(
-            child: ctrl.isLoading.value
-                ? const Center(child: CircularProgressIndicator())
-                : SingleChildScrollView(
-                    padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildHeader(ctrl),
-                        const SizedBox(height: 32),
-                        _buildCalendar(ctrl),
-                        const SizedBox(height: 32),
-                        _buildMainCalorieCard(ctrl),
-                        const SizedBox(height: 16),
-                        _buildMacroRow(ctrl),
-                        const SizedBox(height: 32),
-                        _buildActivityHeader(),
-                        const SizedBox(height: 16),
-                        _buildActivityList(context, ctrl.meals),
-                      ],
-                    ),
+        return SafeArea(
+          bottom: false,
+          child: ctrl.isLoading.value
+              ? const Center(child: CircularProgressIndicator())
+              : SingleChildScrollView(
+                  padding: const EdgeInsets.only(
+                    left: 24.0,
+                    right: 24.0,
+                    top: 16.0,
+                    bottom: 110.0,
                   ),
-          ),
-          bottomNavigationBar: _buildBottomNav(),
-          floatingActionButton: FloatingActionButton(
-            onPressed: () => Get.toNamed(AppRoutes.scanner),
-            backgroundColor: AppColors.floatingActionButton,
-            child: const Icon(Icons.add, color: Colors.white),
-          ),
-          floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildHeader(ctrl),
+                      const SizedBox(height: 32),
+                      _buildCalendar(ctrl),
+                      const SizedBox(height: 32),
+                      _buildMainCalorieCard(ctrl),
+                      const SizedBox(height: 16),
+                      _buildMacroRow(ctrl),
+                      const SizedBox(height: 32),
+                      _buildActivityHeader(),
+                      const SizedBox(height: 16),
+                      _buildActivityList(context, ctrl.meals),
+                    ],
+                  ),
+                ),
         );
       },
     );
@@ -62,26 +56,32 @@ class HomeScreen extends StatelessWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Row(
-          children: [
-            const CircleAvatar(
-              radius: 20,
-              backgroundColor: AppColors.textSecondary,
-              child: Icon(Icons.person, color: Colors.white),
-            ),
-            const SizedBox(width: 12),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: const [
-                Text('Good morning!', style: AppTextStyles.caption),
-                Text('Alessia Effie', style: AppTextStyles.titleSmall),
-              ],
-            ),
-          ],
+        InkWell(
+          onTap: () => Get.toNamed(AppRoutes.profile),
+          child: Row(
+            children: [
+              const CircleAvatar(
+                radius: 20,
+                backgroundColor: AppColors.textSecondary,
+                child: Icon(Icons.person, color: Colors.white),
+              ),
+              const SizedBox(width: 12),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: const [
+                  Text('Good morning!', style: AppTextStyles.caption),
+                  Text('Alessia Effie', style: AppTextStyles.titleSmall),
+                ],
+              ),
+            ],
+          ),
         ),
         IconButton(
-          onPressed: controller.openPrivacySheet,
-          icon: const Icon(Icons.notifications_none, color: AppColors.textPrimary),
+          onPressed: () => Get.toNamed(AppRoutes.notifications),
+          icon: const Icon(
+            Icons.notifications_none,
+            color: AppColors.textPrimary,
+          ),
         ),
       ],
     );
@@ -91,7 +91,8 @@ class HomeScreen extends StatelessWidget {
     final days = controller.weekDatesList;
     return Row(
       children: days.map((date) {
-        final isActive = controller.selectedDate.value.day == date.day &&
+        final isActive =
+            controller.selectedDate.value.day == date.day &&
             controller.selectedDate.value.month == date.month;
         return Expanded(
           child: GestureDetector(
@@ -103,7 +104,9 @@ class HomeScreen extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w500,
-                    color: isActive ? AppColors.textPrimary : AppColors.textSecondary,
+                    color: isActive
+                        ? AppColors.textPrimary
+                        : AppColors.textSecondary,
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -112,7 +115,9 @@ class HomeScreen extends StatelessWidget {
                   height: 36,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    border: isActive ? Border.all(color: AppColors.textPrimary, width: 2) : null,
+                    border: isActive
+                        ? Border.all(color: AppColors.textPrimary, width: 2)
+                        : null,
                   ),
                   alignment: Alignment.center,
                   child: Text(
@@ -155,10 +160,16 @@ class HomeScreen extends StatelessWidget {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Text('${controller.summary.value.consumedCalories}', style: AppTextStyles.headline),
                   Text(
-                    ' / ${controller.summary.value.targetCalories}',
-                    style: AppTextStyles.body.copyWith(fontSize: 18, fontWeight: FontWeight.w600),
+                    '${controller.summary.value.consumedCalories}',
+                    style: AppTextStyles.headline,
+                  ),
+                  Text(
+                    ' / ${controller.targetCalories}',
+                    style: AppTextStyles.body.copyWith(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ],
               ),
@@ -199,7 +210,9 @@ class HomeScreen extends StatelessWidget {
           child: MacroCard(
             amount: '${controller.remainingProtein} g',
             label: 'Protein left',
-            percent: controller.remainingProtein / AppConfig.defaultTargetProtein,
+            percent: controller.targetProtein == 0
+                ? 0
+                : controller.remainingProtein / controller.targetProtein,
             color: AppColors.protein,
             icon: Icons.egg_outlined,
           ),
@@ -209,7 +222,9 @@ class HomeScreen extends StatelessWidget {
           child: MacroCard(
             amount: '${controller.remainingCarbs} g',
             label: 'Carbs left',
-            percent: controller.remainingCarbs / AppConfig.defaultTargetCarbs,
+            percent: controller.targetCarbs == 0
+                ? 0
+                : controller.remainingCarbs / controller.targetCarbs,
             color: AppColors.carbs,
             icon: Icons.blur_circular,
           ),
@@ -219,7 +234,9 @@ class HomeScreen extends StatelessWidget {
           child: MacroCard(
             amount: '${controller.remainingFats} g',
             label: 'Fat left',
-            percent: controller.remainingFats / AppConfig.defaultTargetFats,
+            percent: controller.targetFats == 0
+                ? 0
+                : controller.remainingFats / controller.targetFats,
             color: AppColors.fats,
             icon: Icons.water_drop_outlined,
           ),
@@ -232,9 +249,12 @@ class HomeScreen extends StatelessWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       crossAxisAlignment: CrossAxisAlignment.end,
-      children: const [
-        Text("Today's Activity", style: AppTextStyles.titleMedium),
-        Text('See All', style: AppTextStyles.body),
+      children: [
+        const Text("Today's Activity", style: AppTextStyles.titleMedium),
+        GestureDetector(
+          onTap: () => Get.toNamed(AppRoutes.activity),
+          child: const Text('See All', style: AppTextStyles.body),
+        ),
       ],
     );
   }
@@ -258,42 +278,6 @@ class HomeScreen extends StatelessWidget {
             ),
           )
           .toList(),
-    );
-  }
-
-  Widget _buildBottomNav() {
-    return BottomAppBar(
-      shape: const CircularNotchedRectangle(),
-      notchMargin: 8.0,
-      color: Colors.white,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 40.0),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            IconButton(
-              icon: const Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.home_filled, color: AppColors.activeIcon),
-                  Text('Home', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
-                ],
-              ),
-              onPressed: () {},
-            ),
-            IconButton(
-              icon: const Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.event_note_outlined, color: AppColors.inactiveIcon),
-                  Text('Plan', style: TextStyle(fontSize: 10, color: AppColors.textSecondary)),
-                ],
-              ),
-              onPressed: () {},
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

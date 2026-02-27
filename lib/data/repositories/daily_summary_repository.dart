@@ -5,6 +5,7 @@ import '../../core/constants/hive_boxes.dart';
 import '../../core/utils/date_utils.dart';
 import '../models/daily_summary.dart';
 import '../models/meal_log.dart';
+import 'user_profile_repository.dart';
 import 'meal_log_repository.dart';
 
 abstract class DailySummaryRepository {
@@ -19,16 +20,19 @@ class HiveDailySummaryRepository implements DailySummaryRepository {
   HiveDailySummaryRepository({
     Box<DailySummary>? box,
     required MealLogRepository mealLogRepository,
+    required UserProfileRepository userProfileRepository,
   })  : _box = box ?? Hive.box<DailySummary>(HiveBoxes.dailySummary),
-        _mealLogRepository = mealLogRepository;
+        _mealLogRepository = mealLogRepository,
+        _userProfileRepository = userProfileRepository;
 
   final Box<DailySummary> _box;
   final MealLogRepository _mealLogRepository;
+  final UserProfileRepository _userProfileRepository;
 
   @override
   Future<DailySummary> getSummary(DateTime date) async {
     final key = dateKey(date);
-    return _box.get(key) ?? DailySummary.empty(key);
+    return _box.get(key) ?? await _defaultSummary(key);
   }
 
   @override
@@ -44,7 +48,7 @@ class HiveDailySummaryRepository implements DailySummaryRepository {
     }
 
     final key = dateKey(meal.timestamp);
-    final current = _box.get(key) ?? DailySummary.empty(key);
+    final current = _box.get(key) ?? await _defaultSummary(key);
 
     final deltaCalories = (added?.calories ?? 0) - (removed?.calories ?? 0);
     final deltaProtein = (added?.protein ?? 0) - (removed?.protein ?? 0);
@@ -67,7 +71,7 @@ class HiveDailySummaryRepository implements DailySummaryRepository {
     for (var i = 0; i < days; i++) {
       final date = now.subtract(Duration(days: i));
       final meals = await _mealLogRepository.getMealsForDate(date);
-      final summary = _summaryFromMeals(date, meals);
+      final summary = await _summaryFromMeals(date, meals);
       await upsert(summary);
     }
   }
@@ -77,20 +81,40 @@ class HiveDailySummaryRepository implements DailySummaryRepository {
     await _box.clear();
   }
 
-  DailySummary _summaryFromMeals(DateTime date, List<MealLog> meals) {
+  Future<DailySummary> _summaryFromMeals(DateTime date, List<MealLog> meals) async {
     final key = dateKey(date);
     final calories = meals.fold<int>(0, (sum, m) => sum + m.calories);
     final protein = meals.fold<int>(0, (sum, m) => sum + m.protein);
     final carbs = meals.fold<int>(0, (sum, m) => sum + m.carbs);
     final fats = meals.fold<int>(0, (sum, m) => sum + m.fats);
 
+    final targetCalories = await _targetCalories();
+
     return DailySummary(
       dateKey: key,
-      targetCalories: AppConfig.defaultTargetCalories,
+      targetCalories: targetCalories,
       consumedCalories: calories,
       proteinGram: protein,
       carbsGram: carbs,
       fatsGram: fats,
     );
   }
+
+  Future<DailySummary> _defaultSummary(String key) async {
+    final targetCalories = await _targetCalories();
+    return DailySummary(
+      dateKey: key,
+      targetCalories: targetCalories,
+      consumedCalories: 0,
+      proteinGram: 0,
+      carbsGram: 0,
+      fatsGram: 0,
+    );
+  }
+
+  Future<int> _targetCalories() async {
+    final profile = await _userProfileRepository.getProfile();
+    return profile?.targetCalories ?? AppConfig.defaultTargetCalories;
+  }
 }
+

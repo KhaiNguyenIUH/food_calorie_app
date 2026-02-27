@@ -7,6 +7,7 @@ class AppConfig {
   static const bool useMockApi = bool.fromEnvironment('USE_MOCK_API', defaultValue: true);
 
   static const String defaultVisionDetail = 'low';
+  static const String appProxySecret = String.fromEnvironment('APP_PROXY_SECRET', defaultValue: '');
   static const int maxImageSize = 800;
   static const int jpegQuality = 85;
 

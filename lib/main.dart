@@ -1,22 +1,37 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:liquid_tabbar_minimize/liquid_tabbar_minimize.dart';
 import 'app/bindings/initial_binding.dart';
 import 'app/routes.dart';
+import 'data/repositories/user_profile_repository.dart';
 import 'core/services/hive_service.dart';
-import 'presentation/home/home_screen.dart';
+import 'presentation/main/main_screen.dart';
 import 'presentation/scanner/scanner_screen.dart';
+import 'presentation/onboarding/onboarding_screen.dart';
+import 'presentation/notifications/notifications_screen.dart';
+import 'presentation/activity/activity_screen.dart';
+import 'presentation/profile/profile_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final needsRebuild = await HiveService.init();
-  runApp(FoodCalorieApp(needsCacheRebuild: needsRebuild));
+  final profileRepo = UserProfileRepository();
+  final hasProfile = profileRepo.hasProfile;
+  runApp(
+    FoodCalorieApp(needsCacheRebuild: needsRebuild, hasProfile: hasProfile),
+  );
 }
 
 class FoodCalorieApp extends StatelessWidget {
-  const FoodCalorieApp({super.key, required this.needsCacheRebuild});
+  const FoodCalorieApp({
+    super.key,
+    required this.needsCacheRebuild,
+    required this.hasProfile,
+  });
 
   final bool needsCacheRebuild;
+  final bool hasProfile;
 
   @override
   Widget build(BuildContext context) {
@@ -31,10 +46,23 @@ class FoodCalorieApp extends StatelessWidget {
           Theme.of(context).textTheme,
         ),
       ),
-      initialRoute: AppRoutes.home,
+      navigatorObservers: [LiquidRouteObserver.instance],
+      initialRoute: hasProfile ? AppRoutes.main : AppRoutes.onboarding,
       getPages: [
-        GetPage(name: AppRoutes.home, page: () => const HomeScreen()),
+        GetPage(name: AppRoutes.main, page: () => const MainScreen()),
+        GetPage(name: AppRoutes.home, page: () => const MainScreen(initialIndex: 0)),
+        GetPage(
+          name: AppRoutes.onboarding,
+          page: () => const OnboardingScreen(),
+        ),
         GetPage(name: AppRoutes.scanner, page: () => const ScannerScreen()),
+        GetPage(
+          name: AppRoutes.notifications,
+          page: () => const NotificationsScreen(),
+        ),
+        GetPage(name: AppRoutes.plan, page: () => const MainScreen(initialIndex: 1)),
+        GetPage(name: AppRoutes.activity, page: () => const ActivityScreen()),
+        GetPage(name: AppRoutes.profile, page: () => const ProfileScreen()),
       ],
     );
   }

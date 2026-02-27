@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 class AppColors {
   // Backgrounds
   static const Color background = Color(0xFFF5F6F8);
+  static const Color homeBackground = Color(0xFFF5F6F8);
   static const Color cardBackground = Colors.white;
   static const Color progressBackground = Color(0xFFF0F1F5);
   static const Color sheetBackground = Colors.white;

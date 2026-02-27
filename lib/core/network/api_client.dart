@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import '../constants/app_config.dart';
 
 class ApiClient {
   ApiClient({http.Client? httpClient}) : _client = httpClient ?? http.Client();
@@ -11,11 +10,13 @@ class ApiClient {
     String path, {
     required Map<String, dynamic> body,
     String? token,
+    String? appSecret,
   }) async {
-    final uri = Uri.parse('${AppConfig.apiBaseUrl}$path');
+    final uri = Uri.parse(path);
     final headers = <String, String>{
       'Content-Type': 'application/json',
       if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
+      if (appSecret != null && appSecret.isNotEmpty) 'x-app-secret': appSecret,
     };
 
     final response = await _client.post(

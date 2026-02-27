@@ -8,9 +8,11 @@ import 'package:food_calorie_app/presentation/shared/widgets/macro_card.dart';
 import 'package:food_calorie_app/core/constants/app_config.dart';
 import 'package:food_calorie_app/data/models/daily_summary.dart';
 import 'package:food_calorie_app/data/models/meal_log.dart';
+import 'package:food_calorie_app/data/models/user_profile.dart';
 import 'package:food_calorie_app/data/repositories/daily_summary_repository.dart';
 import 'package:food_calorie_app/data/repositories/meal_log_repository.dart';
 import 'package:food_calorie_app/data/repositories/privacy_repository.dart';
+import 'package:food_calorie_app/data/repositories/user_profile_repository.dart';
 import 'package:food_calorie_app/domain/services/storage_cleanup_service.dart';
 import 'package:food_calorie_app/core/utils/date_utils.dart';
 
@@ -23,6 +25,28 @@ class FakePrivacyRepository implements PrivacyRepository {
   @override
   Future<void> setPrivacyConsent(bool value) async {
     _consent = value;
+  }
+}
+
+class FakeUserProfileRepository extends UserProfileRepository {
+  UserProfile? profile;
+
+  FakeUserProfileRepository({this.profile});
+
+  @override
+  bool get hasProfile => profile != null;
+
+  @override
+  Future<UserProfile?> getProfile() async => profile;
+
+  @override
+  Future<void> upsert(UserProfile profile) async {
+    this.profile = profile;
+  }
+
+  @override
+  Future<void> clear() async {
+    profile = null;
   }
 }
 
@@ -86,10 +110,12 @@ class TestHomeController extends HomeController {
   TestHomeController({
     required MealLogRepository mealLogRepository,
     required DailySummaryRepository dailySummaryRepository,
+    required UserProfileRepository userProfileRepository,
     required PrivacyRepository privacyRepository,
   }) : super(
           mealLogRepository: mealLogRepository,
           dailySummaryRepository: dailySummaryRepository,
+          userProfileRepository: userProfileRepository,
           privacyRepository: privacyRepository,
           storageCleanupService: StorageCleanupService(),
         );
@@ -151,12 +177,35 @@ void main() {
     final mealRepo = FakeMealLogRepository();
     final summaryRepo = FakeDailySummaryRepository();
     final privacyRepo = FakePrivacyRepository();
+    final profileRepo = FakeUserProfileRepository(
+      profile: UserProfile(
+        id: 'current',
+        age: 25,
+        sex: 'female',
+        heightCm: 165,
+        weightKg: 60,
+        activityLevel: 'moderate',
+        goalType: 'maintain',
+        goalDeltaKcal: 0,
+        macroProteinPct: 30,
+        macroCarbsPct: 40,
+        macroFatsPct: 30,
+        targetCalories: 2000,
+        targetProteinG: 150,
+        targetCarbsG: 200,
+        targetFatsG: 70,
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      ),
+    );
     final controller = TestHomeController(
       mealLogRepository: mealRepo,
       dailySummaryRepository: summaryRepo,
+      userProfileRepository: profileRepo,
       privacyRepository: privacyRepo,
     );
 
+    controller.profile.value = profileRepo.profile;
     controller.summary.value = DailySummary(
       dateKey: dateKey(DateTime.now()),
       targetCalories: AppConfig.defaultTargetCalories,

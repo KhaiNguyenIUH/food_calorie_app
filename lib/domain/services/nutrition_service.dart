@@ -25,7 +25,7 @@ class NutritionService {
 
     final token = await _tokenProvider.getToken();
     final response = await _apiClient.postJson(
-      '/v1/vision/analyze',
+      '${AppConfig.apiBaseUrl}/api/vision/analyze',
       token: token,
       body: {
         'image_base64': imageBase64,
@@ -33,6 +33,7 @@ class NutritionService {
         'client_timestamp': clientTimestamp.toIso8601String(),
         'timezone': timezone,
       },
+      appSecret: AppConfig.appProxySecret,
     );
 
     return NutritionResult.fromJson(response);
