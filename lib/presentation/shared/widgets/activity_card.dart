@@ -53,7 +53,14 @@ class ActivityCard extends StatelessWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(title, style: AppTextStyles.titleSmall),
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: AppTextStyles.titleSmall,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
                     Text(time, style: AppTextStyles.caption),
                   ],
                 ),
@@ -90,12 +97,7 @@ class ActivityCard extends StatelessWidget {
       if (file.existsSync()) {
         return ClipRRect(
           borderRadius: BorderRadius.circular(16),
-          child: Image.file(
-            file,
-            width: 70,
-            height: 70,
-            fit: BoxFit.cover,
-          ),
+          child: Image.file(file, width: 70, height: 70, fit: BoxFit.cover),
         );
       }
     }
@@ -116,10 +118,7 @@ class _MacroTag extends StatelessWidget {
   final Color color;
   final int amount;
 
-  const _MacroTag({
-    required this.color,
-    required this.amount,
-  });
+  const _MacroTag({required this.color, required this.amount});
 
   @override
   Widget build(BuildContext context) {

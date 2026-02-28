@@ -7,8 +7,8 @@ class NutritionService {
   NutritionService({
     required ApiClient apiClient,
     required TokenProvider tokenProvider,
-  })  : _apiClient = apiClient,
-        _tokenProvider = tokenProvider;
+  }) : _apiClient = apiClient,
+       _tokenProvider = tokenProvider;
 
   final ApiClient _apiClient;
   final TokenProvider _tokenProvider;
@@ -32,6 +32,7 @@ class NutritionService {
         'detail': detail ?? AppConfig.defaultVisionDetail,
         'client_timestamp': clientTimestamp.toIso8601String(),
         'timezone': timezone,
+        'device_id': AppConfig.deviceId,
       },
       appSecret: AppConfig.appProxySecret,
     );

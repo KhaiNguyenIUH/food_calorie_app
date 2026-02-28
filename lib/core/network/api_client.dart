@@ -25,6 +25,10 @@ class ApiClient {
       body: jsonEncode(body),
     );
 
+    if (response.statusCode == 429) {
+      throw RateLimitException(message: response.body);
+    }
+
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw ApiException(
         statusCode: response.statusCode,
@@ -51,4 +55,13 @@ class ApiException implements Exception {
 
   @override
   String toString() => 'ApiException($statusCode): $message';
+}
+
+class RateLimitException implements Exception {
+  RateLimitException({required this.message});
+
+  final String message;
+
+  @override
+  String toString() => 'RateLimitException: $message';
 }

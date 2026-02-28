@@ -1,0 +1,16 @@
+{
+    "functions": {
+        "api/**/*.ts": {
+            "maxDuration": 30
+        }
+    },
+    "routes": [
+        {
+            "src": "/api/vision/analyze",
+            "methods": [
+                "POST"
+            ],
+            "dest": "/api/vision/analyze.ts"
+        }
+    ]
+}
