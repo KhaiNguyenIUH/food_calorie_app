@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
-import '../../core/network/api_client.dart';
+import '../../core/errors/app_error.dart';
 import '../../core/constants/app_config.dart';
 import '../../data/models/meal_log.dart';
 import '../../data/models/nutrition_result.dart';
@@ -150,29 +150,35 @@ class ScannerController extends GetxController {
       );
 
       _showResultSheet(result, _storedPath!);
-    } on RateLimitException catch (e) {
-      developer.log('analyzePreview() rate limited', error: e);
-      isRateLimited = true;
-      rateLimitMessage = 'Daily scan limit reached. Try again tomorrow.';
-      Get.snackbar(
-        'Rate Limited',
-        rateLimitMessage,
-        backgroundColor: Colors.orange,
-        colorText: Colors.white,
-        duration: const Duration(seconds: 5),
-        icon: const Icon(Icons.block, color: Colors.white),
-      );
     } catch (e, st) {
       developer.log('analyzePreview() error', error: e, stackTrace: st);
-      Get.snackbar(
-        'Analysis failed',
-        e.toString(),
-        duration: const Duration(seconds: 8),
-      );
+      final appError = AppErrorMapper.fromException(e);
+      _showError(appError);
+
+      if (e is ApiStatusError && e.isRateLimited) {
+        isRateLimited = true;
+        rateLimitMessage = appError.message;
+      }
     } finally {
       isProcessing = false;
       update();
     }
+  }
+
+  // ── Error display ──────────────────────────────────────────────
+
+  void _showError(AppError error) {
+    Get.snackbar(
+      error.title,
+      error.message,
+      backgroundColor: error.isRetryable ? Colors.orange : Colors.redAccent,
+      colorText: Colors.white,
+      duration: const Duration(seconds: 5),
+      icon: Icon(
+        error.isRetryable ? Icons.refresh : Icons.error_outline,
+        color: Colors.white,
+      ),
+    );
   }
 
   // ── Result sheet ────────────────────────────────────────────────

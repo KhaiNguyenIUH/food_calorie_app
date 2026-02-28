@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
+import '../../app/routes.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../home/home_controller.dart';
@@ -43,6 +44,8 @@ class ActivityScreen extends StatelessWidget {
               carbs: meal.carbs,
               fats: meal.fats,
               imagePath: meal.imagePath,
+              onTap: () =>
+                  Get.toNamed(AppRoutes.activityDetail, arguments: meal),
             );
           },
         );

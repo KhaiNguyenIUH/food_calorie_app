@@ -275,6 +275,8 @@ class HomeScreen extends StatelessWidget {
               carbs: meal.carbs,
               fats: meal.fats,
               imagePath: meal.imagePath,
+              onTap: () =>
+                  Get.toNamed(AppRoutes.activityDetail, arguments: meal),
             ),
           )
           .toList(),

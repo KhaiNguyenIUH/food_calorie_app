@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:developer' as developer;
 import 'package:http/http.dart' as http;
+import '../errors/app_error.dart';
 
 class ApiClient {
   ApiClient({http.Client? httpClient}) : _client = httpClient ?? http.Client();
@@ -31,14 +32,10 @@ class ApiClient {
       '${response.body.length > 500 ? response.body.substring(0, 500) : response.body}',
     );
 
-    if (response.statusCode == 429) {
-      throw RateLimitException(message: response.body);
-    }
-
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw ApiException(
+      throw ApiStatusError(
         statusCode: response.statusCode,
-        message: response.body,
+        serverMessage: _extractErrorMessage(response.body),
       );
     }
 
@@ -46,28 +43,20 @@ class ApiClient {
     if (decoded is Map<String, dynamic>) {
       return decoded;
     }
-    throw ApiException(
+    throw ApiStatusError(
       statusCode: response.statusCode,
-      message: 'Invalid JSON response',
+      serverMessage: 'Invalid JSON response',
     );
   }
-}
 
-class ApiException implements Exception {
-  ApiException({required this.statusCode, required this.message});
-
-  final int statusCode;
-  final String message;
-
-  @override
-  String toString() => 'ApiException($statusCode): $message';
-}
-
-class RateLimitException implements Exception {
-  RateLimitException({required this.message});
-
-  final String message;
-
-  @override
-  String toString() => 'RateLimitException: $message';
+  /// Extracts the "error" field from a JSON response body, if present.
+  String? _extractErrorMessage(String body) {
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded is Map<String, dynamic>) {
+        return decoded['error'] as String?;
+      }
+    } catch (_) {}
+    return body.length > 200 ? body.substring(0, 200) : body;
+  }
 }

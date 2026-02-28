@@ -135,4 +135,11 @@ class HomeController extends GetxController {
     Get.snackbar('Deleted', 'All scan data has been removed.');
   }
 
+  Future<void> deleteMealEntry(MealLog meal) async {
+    await _mealLogRepository.deleteMeal(meal.id);
+    await _dailySummaryRepository.updateForMealChange(removed: meal);
+    await _storageCleanupService.deleteImagesForMeals([meal]);
+    await loadForDate(selectedDate.value);
+  }
+
 }

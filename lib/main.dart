@@ -13,6 +13,7 @@ import 'presentation/scanner/scanner_screen.dart';
 import 'presentation/onboarding/onboarding_screen.dart';
 import 'presentation/notifications/notifications_screen.dart';
 import 'presentation/activity/activity_screen.dart';
+import 'presentation/activity/activity_detail_screen.dart';
 import 'presentation/profile/profile_screen.dart';
 
 Future<void> main() async {
@@ -79,6 +80,10 @@ class FoodCalorieApp extends StatelessWidget {
           page: () => const MainScreen(initialIndex: 1),
         ),
         GetPage(name: AppRoutes.activity, page: () => const ActivityScreen()),
+        GetPage(
+          name: AppRoutes.activityDetail,
+          page: () => const ActivityDetailScreen(),
+        ),
         GetPage(name: AppRoutes.profile, page: () => const ProfileScreen()),
       ],
     );

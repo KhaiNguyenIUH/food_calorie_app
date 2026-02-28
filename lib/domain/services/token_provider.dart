@@ -1,5 +1,6 @@
 import 'dart:developer' as developer;
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../core/errors/app_error.dart';
 
 abstract class TokenProvider {
   Future<String?> getToken();
@@ -20,7 +21,7 @@ class SupabaseTokenProvider implements TokenProvider {
 
     if (session == null) {
       developer.log('[TokenProvider] Failed to obtain session');
-      return null;
+      throw const AuthSessionError();
     }
 
     // Refresh if token expires within 60 seconds

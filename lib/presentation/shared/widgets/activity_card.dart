@@ -12,6 +12,7 @@ class ActivityCard extends StatelessWidget {
   final int fats;
   final String imagePath;
   final Color imageColor;
+  final VoidCallback? onTap;
 
   const ActivityCard({
     super.key,
@@ -23,11 +24,12 @@ class ActivityCard extends StatelessWidget {
     required this.fats,
     this.imagePath = '',
     this.imageColor = Colors.orangeAccent,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    final card = Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -89,6 +91,11 @@ class ActivityCard extends StatelessWidget {
         ],
       ),
     );
+
+    if (onTap == null) {
+      return card;
+    }
+    return GestureDetector(onTap: onTap, child: card);
   }
 
   Widget _buildThumbnail() {
