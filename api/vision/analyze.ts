@@ -1,12 +1,8 @@
+import type { IncomingMessage, ServerResponse } from 'http';
 import { createRemoteJWKSet, jwtVerify, JWTPayload } from 'jose';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { z } from 'zod';
-
-/* ------------------------------------------------------------------ */
-/*  Edge Runtime config                                                */
-/* ------------------------------------------------------------------ */
-
-export const config = { runtime: 'edge' };
+import { createHash } from 'crypto';
 
 /* ------------------------------------------------------------------ */
 /*  Constants                                                          */
@@ -80,7 +76,7 @@ interface VerifiedClaims {
     sub: string;
 }
 
-async function verifyJwt(authHeader: string | null): Promise<VerifiedClaims> {
+async function verifyJwt(authHeader: string | undefined): Promise<VerifiedClaims> {
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
         throw new AuthError('Missing or malformed Authorization header');
     }
@@ -116,21 +112,15 @@ class AuthError extends Error {
 /*  Hashing helpers                                                    */
 /* ------------------------------------------------------------------ */
 
-async function sha256(input: string): Promise<string> {
-    const data = new TextEncoder().encode(input);
-    const hash = await crypto.subtle.digest('SHA-256', data);
-    return Array.from(new Uint8Array(hash))
-        .map((b) => b.toString(16).padStart(2, '0'))
-        .join('');
+function sha256(input: string): string {
+    return createHash('sha256').update(input).digest('hex');
 }
 
 function extractIpPrefix(ip: string): string {
-    // IPv4: /24 prefix
     if (ip.includes('.')) {
         const parts = ip.split('.');
         return parts.slice(0, 3).join('.') + '.0/24';
     }
-    // IPv6: /56 prefix (first 4 groups)
     const groups = ip.split(':');
     return groups.slice(0, 4).join(':') + '::/56';
 }
@@ -394,69 +384,88 @@ class UpstreamError extends Error {
 }
 
 /* ------------------------------------------------------------------ */
-/*  JSON response helper                                               */
+/*  Node request body reader                                           */
 /* ------------------------------------------------------------------ */
 
-function jsonResponse(
-    body: Record<string, unknown>,
-    status: number,
-    extraHeaders?: Record<string, string>,
-): Response {
-    return new Response(JSON.stringify(body), {
-        status,
-        headers: {
-            'Content-Type': 'application/json',
-            ...extraHeaders,
-        },
+function readBody(req: IncomingMessage): Promise<string> {
+    return new Promise((resolve, reject) => {
+        const chunks: Buffer[] = [];
+        req.on('data', (chunk: Buffer) => chunks.push(chunk));
+        req.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')));
+        req.on('error', reject);
     });
 }
 
+function sendJson(
+    res: ServerResponse,
+    status: number,
+    body: Record<string, unknown>,
+    extraHeaders?: Record<string, string>,
+): void {
+    res.writeHead(status, {
+        'Content-Type': 'application/json',
+        ...extraHeaders,
+    });
+    res.end(JSON.stringify(body));
+}
+
 /* ------------------------------------------------------------------ */
-/*  Main handler (Edge Runtime)                                        */
+/*  Main handler (Node Runtime)                                        */
 /* ------------------------------------------------------------------ */
 
-export default async function handler(req: Request): Promise<Response> {
+export default async function handler(
+    req: IncomingMessage,
+    res: ServerResponse,
+): Promise<void> {
     // --- Method guard ---
     if (req.method !== 'POST') {
-        return jsonResponse({ error: 'Method not allowed' }, 405);
+        sendJson(res, 405, { error: 'Method not allowed' });
+        return;
     }
 
     // --- Auth: verify Supabase JWT ---
     let claims: VerifiedClaims;
     try {
-        claims = await verifyJwt(req.headers.get('authorization'));
+        const authHeader = Array.isArray(req.headers.authorization)
+            ? req.headers.authorization[0]
+            : req.headers.authorization;
+        claims = await verifyJwt(authHeader);
     } catch (err) {
         const message = err instanceof AuthError
             ? err.message
             : 'Unauthorized';
-        return jsonResponse({ error: message }, 401);
+        sendJson(res, 401, { error: message });
+        return;
     }
 
     const supabase = getSupabase();
-    const ip =
-        req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
+    const forwarded = req.headers['x-forwarded-for'];
+    const ip = (Array.isArray(forwarded) ? forwarded[0] : forwarded)
+        ?.split(',')[0]?.trim() ?? req.socket?.remoteAddress ?? 'unknown';
     const startMs = Date.now();
     const aiModel = process.env.AI_MODEL ?? 'gemini-2.5-flash';
     const aiProvider = (process.env.AI_PROVIDER ?? 'gemini').toLowerCase();
 
     // Hash identifiers for privacy
-    const subjectHash = await sha256(claims.sub);
+    const subjectHash = sha256(claims.sub);
     const ipPrefix = extractIpPrefix(ip);
-    const ipPrefixHash = await sha256(ipPrefix);
+    const ipPrefixHash = sha256(ipPrefix);
 
     try {
         // --- Parse & validate body ---
-        const rawBody = await req.json();
+        const rawText = await readBody(req);
+        const rawBody = JSON.parse(rawText);
         const parsed = RequestSchema.safeParse(rawBody);
 
         if (!parsed.success) {
-            return jsonResponse({
+            sendJson(res, 400, {
                 error: 'Validation failed',
                 details: parsed.error.issues.map((i) => i.message),
-            }, 400);
+            });
+            return;
         }
 
-        const { image_base64, detail } = parsed.data;
+        const { image_base64 } = parsed.data;
 
         // --- Parse data URL and validate mime ---
         const { mimeType, base64 } = parseDataUrl(image_base64);
@@ -464,7 +473,8 @@ export default async function handler(req: Request): Promise<Response> {
         // --- Decoded size guard (3 MB) ---
         const decodedSize = Math.ceil(base64.length * 3 / 4);
         if (decodedSize > MAX_DECODED_BYTES) {
-            return jsonResponse({ error: 'Image too large (max 3MB)' }, 413);
+            sendJson(res, 413, { error: 'Image too large (max 3MB)' });
+            return;
         }
 
         // --- Atomic rate limit ---
@@ -478,7 +488,6 @@ export default async function handler(req: Request): Promise<Response> {
                 rateLimit,
             );
         } catch (err) {
-            // Fail closed: if rate limiter is down, deny requests
             console.error('[analyze] Rate limiter unavailable:', err);
             await logRequest(supabase, {
                 subject_hash: subjectHash,
@@ -489,10 +498,8 @@ export default async function handler(req: Request): Promise<Response> {
                 calories: null,
                 confidence: null,
             }).catch(() => { });
-            return jsonResponse(
-                { error: 'Service temporarily unavailable' },
-                503,
-            );
+            sendJson(res, 503, { error: 'Service temporarily unavailable' });
+            return;
         }
 
         if (!rateResult.allowed) {
@@ -505,16 +512,17 @@ export default async function handler(req: Request): Promise<Response> {
                 calories: null,
                 confidence: null,
             });
-            return jsonResponse({
+            sendJson(res, 429, {
                 error: 'Daily scan limit reached',
                 limit: rateResult.subject_limit,
                 used: rateResult.subject_count,
-            }, 429, {
+            }, {
                 'X-RateLimit-Limit': String(rateResult.subject_limit),
                 'X-RateLimit-Remaining': String(
                     Math.max(0, rateResult.subject_limit - rateResult.subject_count),
                 ),
             });
+            return;
         }
 
         // --- Call AI ---
@@ -541,7 +549,7 @@ export default async function handler(req: Request): Promise<Response> {
             confidence: result.confidence,
         });
 
-        return jsonResponse(result as unknown as Record<string, unknown>, 200, {
+        sendJson(res, 200, result as unknown as Record<string, unknown>, {
             'X-RateLimit-Limit': String(rateResult.subject_limit),
             'X-RateLimit-Remaining': String(
                 Math.max(0, rateResult.subject_limit - rateResult.subject_count),
@@ -563,16 +571,16 @@ export default async function handler(req: Request): Promise<Response> {
             confidence: null,
         }).catch(() => { });
 
-        // Upstream AI errors → 502
         if (err instanceof UpstreamError) {
-            return jsonResponse({ error: 'Upstream AI service error' }, 502);
+            sendJson(res, 502, { error: 'Upstream AI service error' });
+            return;
         }
 
-        // Validation errors → 400
         if (err instanceof ValidationError) {
-            return jsonResponse({ error: message }, 400);
+            sendJson(res, 400, { error: message });
+            return;
         }
 
-        return jsonResponse({ error: 'Analysis failed' }, 500);
+        sendJson(res, 500, { error: 'Analysis failed' });
     }
 }

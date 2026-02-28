@@ -1,6 +1,5 @@
+import type { IncomingMessage, ServerResponse } from 'http';
 import { createClient } from '@supabase/supabase-js';
-
-export const config = { runtime: 'edge' };
 
 function getEnv(key: string): string {
     const v = process.env[key];
@@ -8,26 +7,32 @@ function getEnv(key: string): string {
     return v;
 }
 
-function jsonResponse(
-    body: Record<string, unknown>,
+function sendJson(
+    res: ServerResponse,
     status: number,
-): Response {
-    return new Response(JSON.stringify(body), {
-        status,
-        headers: { 'Content-Type': 'application/json' },
-    });
+    body: Record<string, unknown>,
+): void {
+    res.writeHead(status, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(body));
 }
 
-export default async function handler(req: Request): Promise<Response> {
+export default async function handler(
+    req: IncomingMessage,
+    res: ServerResponse,
+): Promise<void> {
     if (req.method !== 'GET' && req.method !== 'POST') {
-        return jsonResponse({ error: 'Method not allowed' }, 405);
+        sendJson(res, 405, { error: 'Method not allowed' });
+        return;
     }
 
     // Auth: cron secret
-    const cronSecret = req.headers.get('x-cron-secret');
+    const cronSecret = Array.isArray(req.headers['x-cron-secret'])
+        ? req.headers['x-cron-secret'][0]
+        : req.headers['x-cron-secret'];
     const expected = process.env.CRON_SECRET;
     if (!cronSecret || !expected || cronSecret !== expected) {
-        return jsonResponse({ error: 'Unauthorized' }, 401);
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
     }
 
     const supabase = createClient(
@@ -38,23 +43,21 @@ export default async function handler(req: Request): Promise<Response> {
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - 30);
     const cutoffIso = cutoff.toISOString();
-    const cutoffDate = cutoffIso.slice(0, 10); // YYYY-MM-DD
+    const cutoffDate = cutoffIso.slice(0, 10);
 
-    // Delete old scan_requests
     const { count: deletedScans } = await supabase
         .from('scan_requests')
         .delete({ count: 'exact' })
         .lt('created_at', cutoffIso);
 
-    // Delete old rate limit rows
     const { count: deletedLimits } = await supabase
         .from('daily_rate_limits')
         .delete({ count: 'exact' })
         .lt('day', cutoffDate);
 
-    return jsonResponse({
+    sendJson(res, 200, {
         deleted_scans: deletedScans ?? 0,
         deleted_limits: deletedLimits ?? 0,
         cutoff: cutoffIso,
-    }, 200);
+    });
 }
