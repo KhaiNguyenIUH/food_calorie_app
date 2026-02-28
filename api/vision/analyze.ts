@@ -156,12 +156,12 @@ const NUTRITION_PROMPT = `You are a strict nutritionist API. Analyze the food/fo
 {
   "name": "string – name of the food (maybe in vietnamese), can be multiple food",
   "calories": "integer – total kcal",
-  "protein": "integer – grams",
-  "carbs": "integer – grams",
-  "fats": "integer – grams",
+  "protein": "integer – grams (maybe in vietnamese)",
+  "carbs": "integer – grams (maybe in vietnamese)",
+  "fats": "integer – grams (maybe in vietnamese)",
   "health_score": "integer 1-10",
   "confidence": "float 0-1",
-  "warnings": ["string"]
+  "warnings": ["string"] (maybe in vietnamese)
 }`;
 
 const GEMINI_SCHEMA = {
