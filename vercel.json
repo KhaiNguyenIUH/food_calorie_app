@@ -11,6 +11,14 @@
                 "POST"
             ],
             "dest": "/api/vision/analyze.ts"
+        },
+        {
+            "src": "/api/maintenance/purge",
+            "methods": [
+                "GET",
+                "POST"
+            ],
+            "dest": "/api/maintenance/purge.ts"
         }
     ]
 }

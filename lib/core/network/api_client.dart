@@ -11,13 +11,11 @@ class ApiClient {
     String path, {
     required Map<String, dynamic> body,
     String? token,
-    String? appSecret,
   }) async {
     final uri = Uri.parse(path);
     final headers = <String, String>{
       'Content-Type': 'application/json',
       if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
-      if (appSecret != null && appSecret.isNotEmpty) 'x-app-secret': appSecret,
     };
 
     developer.log('[ApiClient] POST $uri');

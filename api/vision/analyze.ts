@@ -1,12 +1,35 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { createRemoteJWKSet, jwtVerify, JWTPayload } from 'jose';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { z } from 'zod';
+
+/* ------------------------------------------------------------------ */
+/*  Edge Runtime config                                                */
+/* ------------------------------------------------------------------ */
+
+export const config = { runtime: 'edge' };
 
 /* ------------------------------------------------------------------ */
 /*  Constants                                                          */
 /* ------------------------------------------------------------------ */
 
-const MAX_BASE64_BYTES = 4 * 1024 * 1024; // 4 MB
+const MAX_DECODED_BYTES = 3 * 1024 * 1024; // 3 MB decoded
 const AI_TIMEOUT_MS = 15_000;
+
+const ALLOWED_MIME = new Set([
+    'image/jpeg',
+    'image/png',
+    'image/webp',
+]);
+
+/* ------------------------------------------------------------------ */
+/*  Environment helpers                                                */
+/* ------------------------------------------------------------------ */
+
+function getEnv(key: string): string {
+    const v = process.env[key];
+    if (!v) throw new Error(`Missing env var: ${key}`);
+    return v;
+}
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -23,30 +46,125 @@ interface NutritionResult {
     warnings: string[];
 }
 
-interface RequestBody {
-    image_base64: string;
-    detail?: string;
-    client_timestamp?: string;
-    timezone?: string;
-    device_id: string;
+/* ------------------------------------------------------------------ */
+/*  Zod request schema                                                 */
+/* ------------------------------------------------------------------ */
+
+const RequestSchema = z.object({
+    image_base64: z.string().min(1, 'image_base64 is required'),
+    detail: z.enum(['low', 'high', 'auto']).default('low'),
+    client_timestamp: z.string().refine(
+        (v) => !isNaN(Date.parse(v)),
+        { message: 'client_timestamp must be valid ISO8601' },
+    ),
+    timezone: z.string().min(1, 'timezone is required'),
+});
+
+/* ------------------------------------------------------------------ */
+/*  JWT verification                                                   */
+/* ------------------------------------------------------------------ */
+
+let _jwks: ReturnType<typeof createRemoteJWKSet> | null = null;
+
+function getJwks(): ReturnType<typeof createRemoteJWKSet> {
+    if (!_jwks) {
+        const supabaseUrl = getEnv('SUPABASE_URL');
+        _jwks = createRemoteJWKSet(
+            new URL(`${supabaseUrl}/auth/v1/.well-known/jwks.json`),
+        );
+    }
+    return _jwks;
+}
+
+interface VerifiedClaims {
+    sub: string;
+}
+
+async function verifyJwt(authHeader: string | null): Promise<VerifiedClaims> {
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        throw new AuthError('Missing or malformed Authorization header');
+    }
+
+    const token = authHeader.slice(7);
+    const supabaseUrl = getEnv('SUPABASE_URL');
+
+    const { payload } = await jwtVerify(token, getJwks(), {
+        issuer: `${supabaseUrl}/auth/v1`,
+        audience: 'authenticated',
+    });
+
+    const role = (payload as JWTPayload & { role?: string }).role;
+    if (role !== 'authenticated') {
+        throw new AuthError('Invalid token role');
+    }
+
+    if (!payload.sub) {
+        throw new AuthError('Token missing sub claim');
+    }
+
+    return { sub: payload.sub };
+}
+
+class AuthError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = 'AuthError';
+    }
 }
 
 /* ------------------------------------------------------------------ */
-/*  Helpers                                                            */
+/*  Hashing helpers                                                    */
 /* ------------------------------------------------------------------ */
 
-function getEnv(key: string): string {
-    const v = process.env[key];
-    if (!v) throw new Error(`Missing env var: ${key}`);
-    return v;
+async function sha256(input: string): Promise<string> {
+    const data = new TextEncoder().encode(input);
+    const hash = await crypto.subtle.digest('SHA-256', data);
+    return Array.from(new Uint8Array(hash))
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('');
 }
 
-function stripDataUrl(raw: string): { mimeType: string; base64: string } {
-    const match = raw.match(/^data:(.+);base64,(.+)$/);
-    if (match) return { mimeType: match[1], base64: match[2] };
-    // Assume raw base64 with JPEG default
-    return { mimeType: 'image/jpeg', base64: raw };
+function extractIpPrefix(ip: string): string {
+    // IPv4: /24 prefix
+    if (ip.includes('.')) {
+        const parts = ip.split('.');
+        return parts.slice(0, 3).join('.') + '.0/24';
+    }
+    // IPv6: /56 prefix (first 4 groups)
+    const groups = ip.split(':');
+    return groups.slice(0, 4).join(':') + '::/56';
 }
+
+/* ------------------------------------------------------------------ */
+/*  Data URL parsing                                                   */
+/* ------------------------------------------------------------------ */
+
+function parseDataUrl(raw: string): { mimeType: string; base64: string } {
+    const match = raw.match(/^data:([^;]+);base64,(.+)$/s);
+    if (!match) {
+        throw new ValidationError('image_base64 must be a data URL (data:<mime>;base64,...)');
+    }
+
+    const mimeType = match[1];
+    if (!ALLOWED_MIME.has(mimeType)) {
+        throw new ValidationError(
+            `Unsupported image type: ${mimeType}. Allowed: ${[...ALLOWED_MIME].join(', ')}`,
+        );
+    }
+
+    return { mimeType, base64: match[2] };
+}
+
+class ValidationError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = 'ValidationError';
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Nutrition result normalization                                     */
+/* ------------------------------------------------------------------ */
 
 function normalize(raw: Record<string, unknown>): NutritionResult {
     const toInt = (v: unknown) => Math.max(0, Math.round(Number(v) || 0));
@@ -85,10 +203,42 @@ function extractJson(text: string): Record<string, unknown> {
 /* ------------------------------------------------------------------ */
 
 function getSupabase(): SupabaseClient {
-    return createClient(getEnv('SUPABASE_URL'), getEnv('SUPABASE_SERVICE_ROLE_KEY'));
+    return createClient(
+        getEnv('SUPABASE_URL'),
+        getEnv('SUPABASE_SERVICE_ROLE_KEY'),
+    );
 }
 
-async function getRateLimit(supabase: SupabaseClient): Promise<number> {
+interface RateLimitResult {
+    allowed: boolean;
+    reason?: string;
+    subject_count: number;
+    subject_limit: number;
+    ip_count?: number;
+    ip_limit?: number;
+}
+
+async function checkRateLimit(
+    supabase: SupabaseClient,
+    subject: string,
+    ipPrefixHash: string,
+    subjectLimit: number,
+): Promise<RateLimitResult> {
+    const { data, error } = await supabase.rpc('check_rate_limit', {
+        p_subject: subject,
+        p_ip_prefix_hash: ipPrefixHash,
+        p_subject_limit: subjectLimit,
+        p_ip_limit: 20,
+    });
+
+    if (error) {
+        throw new Error(`Rate limit RPC failed: ${error.message}`);
+    }
+
+    return data as RateLimitResult;
+}
+
+async function getRateLimitSetting(supabase: SupabaseClient): Promise<number> {
     const { data } = await supabase
         .from('app_settings')
         .select('value')
@@ -97,47 +247,11 @@ async function getRateLimit(supabase: SupabaseClient): Promise<number> {
     return data?.value ?? 5;
 }
 
-async function checkAndIncrementRate(
-    supabase: SupabaseClient,
-    deviceId: string,
-    limit: number,
-): Promise<{ allowed: boolean; count: number }> {
-    const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-
-    // Try to upsert (increment or insert)
-    const { data: existing } = await supabase
-        .from('daily_rate_limits')
-        .select('count')
-        .eq('day', today)
-        .eq('device_id', deviceId)
-        .single();
-
-    const currentCount = existing?.count ?? 0;
-
-    if (currentCount >= limit) {
-        return { allowed: false, count: currentCount };
-    }
-
-    if (existing) {
-        await supabase
-            .from('daily_rate_limits')
-            .update({ count: currentCount + 1 })
-            .eq('day', today)
-            .eq('device_id', deviceId);
-    } else {
-        await supabase
-            .from('daily_rate_limits')
-            .insert({ day: today, device_id: deviceId, count: 1 });
-    }
-
-    return { allowed: true, count: currentCount + 1 };
-}
-
 async function logRequest(
     supabase: SupabaseClient,
     row: {
-        device_id: string | null;
-        ip: string | null;
+        subject_hash: string | null;
+        ip_prefix_hash: string | null;
         status: string;
         model: string | null;
         latency_ms: number | null;
@@ -156,12 +270,12 @@ const NUTRITION_PROMPT = `You are a strict nutritionist API. Analyze the food/fo
 {
   "name": "string – name of the food (maybe in vietnamese), can be multiple food",
   "calories": "integer – total kcal",
-  "protein": "integer – grams (maybe in vietnamese)",
-  "carbs": "integer – grams (maybe in vietnamese)",
-  "fats": "integer – grams (maybe in vietnamese)",
+  "protein": "integer – grams",
+  "carbs": "integer – grams",
+  "fats": "integer – grams",
   "health_score": "integer 1-10",
   "confidence": "float 0-1",
-  "warnings": ["string"] (maybe in vietnamese)
+  "warnings": ["string"]
 }`;
 
 const GEMINI_SCHEMA = {
@@ -218,12 +332,12 @@ async function callGemini(
 
     if (!res.ok) {
         const text = await res.text();
-        throw new Error(`Gemini ${res.status}: ${text}`);
+        throw new UpstreamError(`Gemini ${res.status}: ${text}`);
     }
 
     const payload = await res.json();
     const textPart = payload?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
-    if (!textPart) throw new Error('Empty Gemini response');
+    if (!textPart) throw new UpstreamError('Empty Gemini response');
     return extractJson(textPart);
 }
 
@@ -263,97 +377,145 @@ async function callOpenAI(
 
     if (!res.ok) {
         const text = await res.text();
-        throw new Error(`OpenAI ${res.status}: ${text}`);
+        throw new UpstreamError(`OpenAI ${res.status}: ${text}`);
     }
 
     const payload = await res.json();
     const content = payload?.choices?.[0]?.message?.content ?? '';
-    if (!content) throw new Error('Empty OpenAI response');
+    if (!content) throw new UpstreamError('Empty OpenAI response');
     return extractJson(content);
 }
 
+class UpstreamError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = 'UpstreamError';
+    }
+}
+
 /* ------------------------------------------------------------------ */
-/*  Main handler                                                       */
+/*  JSON response helper                                               */
 /* ------------------------------------------------------------------ */
 
-export default async function handler(
-    req: VercelRequest,
-    res: VercelResponse,
-): Promise<void> {
+function jsonResponse(
+    body: Record<string, unknown>,
+    status: number,
+    extraHeaders?: Record<string, string>,
+): Response {
+    return new Response(JSON.stringify(body), {
+        status,
+        headers: {
+            'Content-Type': 'application/json',
+            ...extraHeaders,
+        },
+    });
+}
+
+/* ------------------------------------------------------------------ */
+/*  Main handler (Edge Runtime)                                        */
+/* ------------------------------------------------------------------ */
+
+export default async function handler(req: Request): Promise<Response> {
     // --- Method guard ---
     if (req.method !== 'POST') {
-        res.status(405).json({ error: 'Method not allowed' });
-        return;
+        return jsonResponse({ error: 'Method not allowed' }, 405);
     }
 
-    // --- Auth ---
-    const secretHeader = req.headers['x-app-secret'];
-    const secret = Array.isArray(secretHeader) ? secretHeader[0] : secretHeader;
-    const expectedSecret = process.env.APP_PROXY_SECRET;
-    if (!secret || !expectedSecret || secret !== expectedSecret) {
-        res.status(401).json({ error: 'Unauthorized' });
-        return;
+    // --- Auth: verify Supabase JWT ---
+    let claims: VerifiedClaims;
+    try {
+        claims = await verifyJwt(req.headers.get('authorization'));
+    } catch (err) {
+        const message = err instanceof AuthError
+            ? err.message
+            : 'Unauthorized';
+        return jsonResponse({ error: message }, 401);
     }
 
     const supabase = getSupabase();
     const ip =
-        (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ??
-        req.socket?.remoteAddress ??
-        null;
+        req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
     const startMs = Date.now();
     const aiModel = process.env.AI_MODEL ?? 'gemini-2.5-flash';
     const aiProvider = (process.env.AI_PROVIDER ?? 'gemini').toLowerCase();
 
+    // Hash identifiers for privacy
+    const subjectHash = await sha256(claims.sub);
+    const ipPrefix = extractIpPrefix(ip);
+    const ipPrefixHash = await sha256(ipPrefix);
+
     try {
         // --- Parse & validate body ---
-        const body: RequestBody =
-            typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+        const rawBody = await req.json();
+        const parsed = RequestSchema.safeParse(rawBody);
 
-        const { image_base64, device_id } = body;
-
-        if (!image_base64 || typeof image_base64 !== 'string') {
-            res.status(400).json({ error: 'image_base64 is required' });
-            return;
-        }
-        if (!device_id || typeof device_id !== 'string') {
-            res.status(400).json({ error: 'device_id is required' });
-            return;
+        if (!parsed.success) {
+            return jsonResponse({
+                error: 'Validation failed',
+                details: parsed.error.issues.map((i) => i.message),
+            }, 400);
         }
 
-        // --- Payload size guard ---
-        const rawLen = Buffer.byteLength(image_base64, 'utf8');
-        if (rawLen > MAX_BASE64_BYTES) {
-            res.status(413).json({ error: 'Image too large' });
-            return;
+        const { image_base64, detail } = parsed.data;
+
+        // --- Parse data URL and validate mime ---
+        const { mimeType, base64 } = parseDataUrl(image_base64);
+
+        // --- Decoded size guard (3 MB) ---
+        const decodedSize = Math.ceil(base64.length * 3 / 4);
+        if (decodedSize > MAX_DECODED_BYTES) {
+            return jsonResponse({ error: 'Image too large (max 3MB)' }, 413);
         }
 
-        // --- Rate limit (per device) ---
-        const rateLimit = await getRateLimit(supabase);
-        const { allowed, count } = await checkAndIncrementRate(
-            supabase,
-            device_id,
-            rateLimit,
-        );
-        if (!allowed) {
+        // --- Atomic rate limit ---
+        let rateResult: RateLimitResult;
+        try {
+            const rateLimit = await getRateLimitSetting(supabase);
+            rateResult = await checkRateLimit(
+                supabase,
+                claims.sub,
+                ipPrefixHash,
+                rateLimit,
+            );
+        } catch (err) {
+            // Fail closed: if rate limiter is down, deny requests
+            console.error('[analyze] Rate limiter unavailable:', err);
             await logRequest(supabase, {
-                device_id,
-                ip,
+                subject_hash: subjectHash,
+                ip_prefix_hash: ipPrefixHash,
+                status: 'limiter_error',
+                model: aiModel,
+                latency_ms: Date.now() - startMs,
+                calories: null,
+                confidence: null,
+            }).catch(() => { });
+            return jsonResponse(
+                { error: 'Service temporarily unavailable' },
+                503,
+            );
+        }
+
+        if (!rateResult.allowed) {
+            await logRequest(supabase, {
+                subject_hash: subjectHash,
+                ip_prefix_hash: ipPrefixHash,
                 status: 'rate_limited',
                 model: aiModel,
                 latency_ms: Date.now() - startMs,
                 calories: null,
                 confidence: null,
             });
-            res.status(429).json({
+            return jsonResponse({
                 error: 'Daily scan limit reached',
-                limit: rateLimit,
-                used: count,
+                limit: rateResult.subject_limit,
+                used: rateResult.subject_count,
+            }, 429, {
+                'X-RateLimit-Limit': String(rateResult.subject_limit),
+                'X-RateLimit-Remaining': String(
+                    Math.max(0, rateResult.subject_limit - rateResult.subject_count),
+                ),
             });
-            return;
         }
-
-        // --- Strip data URL prefix ---
-        const { mimeType, base64 } = stripDataUrl(image_base64);
 
         // --- Call AI ---
         const apiKey = getEnv('AI_API_KEY');
@@ -370,8 +532,8 @@ export default async function handler(
 
         // --- Audit log ---
         await logRequest(supabase, {
-            device_id,
-            ip,
+            subject_hash: subjectHash,
+            ip_prefix_hash: ipPrefixHash,
             status: 'success',
             model: aiModel,
             latency_ms: latencyMs,
@@ -379,24 +541,38 @@ export default async function handler(
             confidence: result.confidence,
         });
 
-        res.status(200).json(result);
+        return jsonResponse(result as unknown as Record<string, unknown>, 200, {
+            'X-RateLimit-Limit': String(rateResult.subject_limit),
+            'X-RateLimit-Remaining': String(
+                Math.max(0, rateResult.subject_limit - rateResult.subject_count),
+            ),
+        });
     } catch (err: unknown) {
         const latencyMs = Date.now() - startMs;
         const message = err instanceof Error ? err.message : 'Unknown error';
 
-        // Full error in server logs only
         console.error('[analyze] Error:', message);
 
         await logRequest(supabase, {
-            device_id: (req.body as RequestBody)?.device_id ?? null,
-            ip,
+            subject_hash: subjectHash,
+            ip_prefix_hash: ipPrefixHash,
             status: 'error',
             model: aiModel,
             latency_ms: latencyMs,
             calories: null,
             confidence: null,
-        }).catch(() => { }); // swallow logging errors
+        }).catch(() => { });
 
-        res.status(500).json({ error: 'Analysis failed' });
+        // Upstream AI errors → 502
+        if (err instanceof UpstreamError) {
+            return jsonResponse({ error: 'Upstream AI service error' }, 502);
+        }
+
+        // Validation errors → 400
+        if (err instanceof ValidationError) {
+            return jsonResponse({ error: message }, 400);
+        }
+
+        return jsonResponse({ error: 'Analysis failed' }, 500);
     }
 }

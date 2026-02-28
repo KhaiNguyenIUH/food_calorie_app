@@ -33,7 +33,7 @@ class InitialBinding extends Bindings {
     Get.put(StorageCleanupService());
     Get.put(ImageProcessingService());
     Get.put(ImageStorageService());
-    Get.put<TokenProvider>(DevTokenProvider());
+    Get.put<TokenProvider>(SupabaseTokenProvider());
     Get.put(ApiClient());
     Get.put(
       NutritionService(

@@ -22,8 +22,7 @@ class NutritionService {
   }) async {
     developer.log(
       '[NutritionService] useMockApi=${AppConfig.useMockApi}, '
-      'apiBaseUrl=${AppConfig.apiBaseUrl}, '
-      'hasSecret=${AppConfig.appProxySecret.isNotEmpty}',
+      'apiBaseUrl=${AppConfig.apiBaseUrl}',
     );
 
     if (AppConfig.useMockApi) {
@@ -45,9 +44,7 @@ class NutritionService {
         'detail': detail ?? AppConfig.defaultVisionDetail,
         'client_timestamp': clientTimestamp.toIso8601String(),
         'timezone': timezone,
-        'device_id': AppConfig.deviceId,
       },
-      appSecret: AppConfig.appProxySecret,
     );
 
     developer.log('[NutritionService] Response: $response');

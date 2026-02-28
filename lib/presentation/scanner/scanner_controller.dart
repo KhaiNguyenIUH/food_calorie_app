@@ -247,8 +247,8 @@ class ScannerController extends GetxController {
       AlertDialog(
         title: const Text('Privacy Notice'),
         content: const Text(
-          'Your image may be retained in abuse monitoring logs '
-          'for up to 30 days. Continue?',
+          'Images are analyzed server-side. Only anonymized session hashes are '
+          'retained for up to 30 days. No raw identifiers are stored. Continue?',
         ),
         actions: [
           TextButton(

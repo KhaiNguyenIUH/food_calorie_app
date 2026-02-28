@@ -1,0 +1,49 @@
+name: Security CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'api/**'
+      - 'package.json'
+      - 'package-lock.json'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'api/**'
+      - 'package.json'
+      - 'package-lock.json'
+
+jobs:
+  security-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript typecheck
+        run: npm run typecheck
+
+      - name: Audit (production deps, high/critical)
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Audit (all deps, high/critical)
+        run: npm audit --audit-level=high
+
+      - name: Archive audit report
+        if: always()
+        run: npm audit --json > audit-report.json || true
+
+      - name: Upload audit artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-audit-report
+          path: audit-report.json

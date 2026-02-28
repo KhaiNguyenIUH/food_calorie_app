@@ -38,7 +38,7 @@ class PrivacySheet extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           const Text(
-            'Images sent for analysis may be retained in abuse monitoring logs for up to 30 days. You can delete your local scan data at any time.',
+            'Images are analyzed server-side. Only anonymized hashes of your session are retained for up to 30 days for abuse monitoring. No raw device identifiers or IP addresses are stored. You can delete your local scan data at any time.',
             style: AppTextStyles.body,
           ),
           const SizedBox(height: 16),

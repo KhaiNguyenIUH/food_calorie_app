@@ -2,11 +2,19 @@
   "private": true,
   "name": "food-calorie-api",
   "version": "1.0.0",
+  "engines": {
+    "node": ">=20.10 <23"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
   "dependencies": {
-    "@supabase/supabase-js": "^2.49.1"
+    "@supabase/supabase-js": "^2.49.1",
+    "jose": "^6.0.8",
+    "zod": "^3.24.2"
   },
   "devDependencies": {
-    "@types/node": "^25.3.2",
-    "@vercel/node": "^5.6.9"
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0"
   }
 }
