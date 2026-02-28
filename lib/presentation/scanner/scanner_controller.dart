@@ -206,6 +206,8 @@ class ScannerController extends GetxController {
       fats: result.fats,
       timestamp: DateTime.now(),
       imagePath: imagePath,
+      healthScore: result.healthScore,
+      warnings: result.warnings,
     );
 
     await _mealLogRepository.addMeal(meal);

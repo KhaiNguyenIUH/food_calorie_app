@@ -1,6 +1,10 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:get/get.dart';
+import 'package:hive/hive.dart';
+import 'package:food_calorie_app/core/constants/hive_boxes.dart';
 import 'package:food_calorie_app/presentation/home/home_controller.dart';
 import 'package:food_calorie_app/presentation/home/home_screen.dart';
 import 'package:food_calorie_app/presentation/shared/widgets/activity_card.dart';
@@ -108,27 +112,35 @@ class FakeDailySummaryRepository implements DailySummaryRepository {
 
 class TestHomeController extends HomeController {
   TestHomeController({
-    required MealLogRepository mealLogRepository,
-    required DailySummaryRepository dailySummaryRepository,
-    required UserProfileRepository userProfileRepository,
-    required PrivacyRepository privacyRepository,
-  }) : super(
-          mealLogRepository: mealLogRepository,
-          dailySummaryRepository: dailySummaryRepository,
-          userProfileRepository: userProfileRepository,
-          privacyRepository: privacyRepository,
-          storageCleanupService: StorageCleanupService(),
-        );
+    required super.mealLogRepository,
+    required super.dailySummaryRepository,
+    required super.userProfileRepository,
+    required super.privacyRepository,
+  }) : super(storageCleanupService: StorageCleanupService());
 
   @override
+  // ignore: must_call_super
   void onInit() {
     isLoading.value = false;
   }
 }
 
 void main() {
-  setUpAll(() {
+  late Directory tempDir;
+
+  setUpAll(() async {
     Get.testMode = true;
+    tempDir = await Directory.systemTemp.createTemp('widget_test_');
+    Hive.init(tempDir.path);
+    if (!Hive.isAdapterRegistered(UserProfileAdapter.typeIdValue)) {
+      Hive.registerAdapter(UserProfileAdapter());
+    }
+    await Hive.openBox<UserProfile>(HiveBoxes.userProfile);
+  });
+
+  tearDownAll(() async {
+    await Hive.close();
+    await tempDir.delete(recursive: true);
   });
 
   testWidgets('MacroCard displays label and amount', (tester) async {
@@ -171,6 +183,32 @@ void main() {
     expect(find.text('40g'), findsOneWidget);
     expect(find.text('20g'), findsOneWidget);
     expect(find.text('15g'), findsOneWidget);
+  });
+
+  testWidgets('ActivityCard calls onTap when pressed', (tester) async {
+    var tapped = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ActivityCard(
+            title: 'Chicken',
+            time: '8:10 AM',
+            calories: 420,
+            protein: 35,
+            carbs: 28,
+            fats: 18,
+            onTap: () {
+              tapped = true;
+            },
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byType(ActivityCard));
+    await tester.pump();
+
+    expect(tapped, isTrue);
   });
 
   testWidgets('Home screen renders sections', (tester) async {
@@ -229,7 +267,7 @@ void main() {
 
     await tester.pumpWidget(
       GetMaterialApp(
-        home: HomeScreen(controller: controller),
+        home: Scaffold(body: HomeScreen(controller: controller)),
       ),
     );
 
