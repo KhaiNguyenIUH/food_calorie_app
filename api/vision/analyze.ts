@@ -152,9 +152,9 @@ async function logRequest(
 /*  AI provider calls                                                  */
 /* ------------------------------------------------------------------ */
 
-const NUTRITION_PROMPT = `You are a strict nutritionist API. Analyze the food in the image and return ONLY valid JSON in the exact schema:
+const NUTRITION_PROMPT = `You are a strict nutritionist API. Analyze the food/foods in the image and return ONLY valid JSON in the exact schema:
 {
-  "name": "string – name of the food",
+  "name": "string – name of the food (maybe in vietnamese), can be multiple food",
   "calories": "integer – total kcal",
   "protein": "integer – grams",
   "carbs": "integer – grams",
