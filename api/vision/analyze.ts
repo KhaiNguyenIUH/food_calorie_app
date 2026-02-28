@@ -325,7 +325,7 @@ async function callGemini(
         throw new UpstreamError(`Gemini ${res.status}: ${text}`);
     }
 
-    const payload = await res.json();
+    const payload: any = await res.json();
     const textPart = payload?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
     if (!textPart) throw new UpstreamError('Empty Gemini response');
     return extractJson(textPart);
@@ -370,7 +370,7 @@ async function callOpenAI(
         throw new UpstreamError(`OpenAI ${res.status}: ${text}`);
     }
 
-    const payload = await res.json();
+    const payload: any = await res.json();
     const content = payload?.choices?.[0]?.message?.content ?? '';
     if (!content) throw new UpstreamError('Empty OpenAI response');
     return extractJson(content);
