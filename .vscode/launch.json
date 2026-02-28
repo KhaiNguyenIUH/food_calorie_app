@@ -1,0 +1,25 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug (Real API)",
+            "request": "launch",
+            "type": "dart",
+            "program": "lib/main.dart",
+            "toolArgs": [
+                "--dart-define=API_BASE_URL=https://foodcalorieapp.vercel.app",
+                "--dart-define=APP_PROXY_SECRET=3d59e328393d54cccccd140ae535d05691cb4651ad38a13f8f5a40c6189af8fd",
+                "--dart-define=USE_MOCK_API=false"
+            ]
+        },
+        {
+            "name": "Debug (Mock API)",
+            "request": "launch",
+            "type": "dart",
+            "program": "lib/main.dart",
+            "toolArgs": [
+                "--dart-define=USE_MOCK_API=true"
+            ]
+        }
+    ]
+}

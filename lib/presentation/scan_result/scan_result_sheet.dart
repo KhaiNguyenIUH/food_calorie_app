@@ -12,11 +12,15 @@ class ScanResultSheet extends StatefulWidget {
     required this.result,
     required this.imagePath,
     required this.onSave,
+    this.onDiscard,
+    this.onScanAnother,
   });
 
   final NutritionResult result;
   final String imagePath;
   final Future<void> Function(NutritionResult updated) onSave;
+  final VoidCallback? onDiscard;
+  final VoidCallback? onScanAnother;
 
   @override
   State<ScanResultSheet> createState() => _ScanResultSheetState();
@@ -98,7 +102,10 @@ class _ScanResultSheetState extends State<ScanResultSheet> {
           Text('Health score', style: AppTextStyles.caption),
           const SizedBox(height: 6),
           TweenAnimationBuilder<double>(
-            tween: Tween<double>(begin: 0, end: (_current.healthScore / 10).clamp(0, 1).toDouble()),
+            tween: Tween<double>(
+              begin: 0,
+              end: (_current.healthScore / 10).clamp(0, 1).toDouble(),
+            ),
             duration: const Duration(milliseconds: 700),
             curve: Curves.easeOutCubic,
             builder: (context, value, child) {
@@ -144,7 +151,10 @@ class _ScanResultSheetState extends State<ScanResultSheet> {
                       ? const SizedBox(
                           width: 18,
                           height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
                         )
                       : const Text('Next'),
                 ),
@@ -155,6 +165,35 @@ class _ScanResultSheetState extends State<ScanResultSheet> {
             const SizedBox(height: 12),
             Text(_current.warnings.join(' • '), style: AppTextStyles.caption),
           ],
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              if (widget.onDiscard != null)
+                Expanded(
+                  child: TextButton.icon(
+                    onPressed: _saving ? null : widget.onDiscard,
+                    icon: const Icon(Icons.undo, size: 18),
+                    label: const Text('Discard'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppColors.textSecondary,
+                      minimumSize: const Size(double.infinity, 44),
+                    ),
+                  ),
+                ),
+              if (widget.onScanAnother != null)
+                Expanded(
+                  child: TextButton.icon(
+                    onPressed: _saving ? null : widget.onScanAnother,
+                    icon: const Icon(Icons.camera_alt_outlined, size: 18),
+                    label: const Text('Scan Another'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppColors.textSecondary,
+                      minimumSize: const Size(double.infinity, 44),
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ],
       ),
     );
@@ -165,7 +204,12 @@ class _ScanResultSheetState extends State<ScanResultSheet> {
     if (file.existsSync()) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(16),
-        child: Image.file(file, height: 180, width: double.infinity, fit: BoxFit.cover),
+        child: Image.file(
+          file,
+          height: 180,
+          width: double.infinity,
+          fit: BoxFit.cover,
+        ),
       );
     }
     return Container(
@@ -182,10 +226,18 @@ class _ScanResultSheetState extends State<ScanResultSheet> {
 
   Future<void> _openEditSheet() async {
     final nameController = TextEditingController(text: _current.name);
-    final caloriesController = TextEditingController(text: _current.calories.toString());
-    final proteinController = TextEditingController(text: _current.protein.toString());
-    final carbsController = TextEditingController(text: _current.carbs.toString());
-    final fatsController = TextEditingController(text: _current.fats.toString());
+    final caloriesController = TextEditingController(
+      text: _current.calories.toString(),
+    );
+    final proteinController = TextEditingController(
+      text: _current.protein.toString(),
+    );
+    final carbsController = TextEditingController(
+      text: _current.carbs.toString(),
+    );
+    final fatsController = TextEditingController(
+      text: _current.fats.toString(),
+    );
 
     final updated = await showModalBottomSheet<NutritionResult>(
       context: context,
@@ -214,8 +266,12 @@ class _ScanResultSheetState extends State<ScanResultSheet> {
                 onPressed: () {
                   final updatedResult = _current.copyWith(
                     name: nameController.text.trim(),
-                    calories: int.tryParse(caloriesController.text) ?? _current.calories,
-                    protein: int.tryParse(proteinController.text) ?? _current.protein,
+                    calories:
+                        int.tryParse(caloriesController.text) ??
+                        _current.calories,
+                    protein:
+                        int.tryParse(proteinController.text) ??
+                        _current.protein,
                     carbs: int.tryParse(carbsController.text) ?? _current.carbs,
                     fats: int.tryParse(fatsController.text) ?? _current.fats,
                   );
@@ -244,7 +300,11 @@ class _ScanResultSheetState extends State<ScanResultSheet> {
     }
   }
 
-  Widget _inputField(String label, TextEditingController controller, {bool isNumber = false}) {
+  Widget _inputField(
+    String label,
+    TextEditingController controller, {
+    bool isNumber = false,
+  }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: TextField(

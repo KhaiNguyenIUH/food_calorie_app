@@ -4,7 +4,7 @@ import 'package:uuid/uuid.dart';
 class AppConfig {
   static const String apiBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'https://example.com',
+    defaultValue: '',
   );
 
   static const bool useMockApi = bool.fromEnvironment(

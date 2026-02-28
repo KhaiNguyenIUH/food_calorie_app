@@ -1,7 +1,9 @@
+import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
+import '../../core/network/api_client.dart';
 import '../../core/constants/app_config.dart';
 import '../../data/models/meal_log.dart';
 import '../../data/models/nutrition_result.dart';
@@ -39,6 +41,14 @@ class ScannerController extends GetxController {
   CameraController? cameraController;
   bool isInitialized = false;
   bool isProcessing = false;
+  bool isRateLimited = false;
+  String rateLimitMessage = '';
+
+  /// Path to the captured/picked image shown in preview.
+  String? previewPath;
+
+  /// Cached stored path for the current preview image.
+  String? _storedPath;
 
   @override
   void onInit() {
@@ -49,9 +59,7 @@ class ScannerController extends GetxController {
   Future<void> _initCamera() async {
     try {
       final cameras = await availableCameras();
-      if (cameras.isEmpty) {
-        return;
-      }
+      if (cameras.isEmpty) return;
       cameraController = CameraController(
         cameras.first,
         ResolutionPreset.high,
@@ -72,57 +80,68 @@ class ScannerController extends GetxController {
     super.onClose();
   }
 
-  Future<void> captureAndAnalyze() async {
-    if (!await _ensureConsent()) {
-      return;
-    }
+  // ── Step 1: Capture ─────────────────────────────────────────────
+
+  Future<void> capture() async {
+    if (!await _ensureConsent()) return;
     if (cameraController == null || !cameraController!.value.isInitialized) {
       return;
     }
-    isProcessing = true;
-    update();
 
     try {
       final file = await cameraController!.takePicture();
-      await _handleImage(file.path);
-    } catch (error) {
-      Get.snackbar('Camera error', 'Unable to capture image.');
-    } finally {
-      isProcessing = false;
+      await _pauseCamera();
+      previewPath = file.path;
+      _storedPath = null;
       update();
+    } catch (e, st) {
+      developer.log('capture() error', error: e, stackTrace: st);
+      Get.snackbar('Camera error', 'Unable to capture image.');
     }
   }
 
   Future<void> pickFromGallery() async {
-    if (!await _ensureConsent()) {
-      return;
-    }
-    isProcessing = true;
-    update();
+    if (!await _ensureConsent()) return;
+
     try {
       final picker = ImagePicker();
       final image = await picker.pickImage(
         source: ImageSource.gallery,
         imageQuality: 92,
       );
-      if (image == null) {
-        return;
-      }
-      await _handleImage(image.path);
-    } catch (_) {
-      Get.snackbar('Gallery error', 'Unable to select image.');
-    } finally {
-      isProcessing = false;
+      if (image == null) return;
+      await _pauseCamera();
+      previewPath = image.path;
+      _storedPath = null;
       update();
+    } catch (e, st) {
+      developer.log('pickFromGallery() error', error: e, stackTrace: st);
+      Get.snackbar('Gallery error', 'Unable to select image.');
     }
   }
 
-  Future<void> _handleImage(String path) async {
-    final storedPath = await _imageStorageService.saveToCache(path);
-    final resized = await _imageProcessingService.resizeAndCompress(storedPath);
-    final dataUrl = _imageProcessingService.toDataUrl(resized);
+  // ── Step 2: Preview actions ─────────────────────────────────────
+
+  void retake() {
+    previewPath = null;
+    _storedPath = null;
+    _resumeCamera();
+    update();
+  }
+
+  Future<void> analyzePreview() async {
+    if (previewPath == null) return;
+
+    isProcessing = true;
+    update();
 
     try {
+      _storedPath ??= await _imageStorageService.saveToCache(previewPath!);
+      final resized = await _imageProcessingService.resizeAndCompress(
+        _storedPath!,
+      );
+      final dataUrl = _imageProcessingService.toDataUrl(resized);
+
       final result = await _nutritionService.analyzeImage(
         imageBase64: dataUrl,
         detail: AppConfig.defaultVisionDetail,
@@ -130,14 +149,33 @@ class ScannerController extends GetxController {
         clientTimestamp: DateTime.now(),
       );
 
-      _showResultSheet(result, storedPath);
-    } catch (_) {
+      _showResultSheet(result, _storedPath!);
+    } on RateLimitException catch (e) {
+      developer.log('analyzePreview() rate limited', error: e);
+      isRateLimited = true;
+      rateLimitMessage = 'Daily scan limit reached. Try again tomorrow.';
+      Get.snackbar(
+        'Rate Limited',
+        rateLimitMessage,
+        backgroundColor: Colors.orange,
+        colorText: Colors.white,
+        duration: const Duration(seconds: 5),
+        icon: const Icon(Icons.block, color: Colors.white),
+      );
+    } catch (e, st) {
+      developer.log('analyzePreview() error', error: e, stackTrace: st);
       Get.snackbar(
         'Analysis failed',
-        'Unable to analyze image. Please try again.',
+        e.toString(),
+        duration: const Duration(seconds: 8),
       );
+    } finally {
+      isProcessing = false;
+      update();
     }
   }
+
+  // ── Result sheet ────────────────────────────────────────────────
 
   void _showResultSheet(NutritionResult result, String imagePath) {
     Get.bottomSheet(
@@ -145,6 +183,8 @@ class ScannerController extends GetxController {
         result: result,
         imagePath: imagePath,
         onSave: (updated) => _saveMeal(updated, imagePath),
+        onDiscard: _onDiscard,
+        onScanAnother: _onScanAnother,
       ),
       isScrollControlled: true,
     );
@@ -170,19 +210,45 @@ class ScannerController extends GetxController {
       await homeController.loadForDate(homeController.selectedDate.value);
     }
 
-    Get.back();
+    // Pop sheet + scanner in one go, back to main screen
+    Get.until((route) => route.isFirst);
   }
 
+  void _onDiscard() {
+    Get.back(); // close sheet
+    retake();
+  }
+
+  void _onScanAnother() {
+    Get.back(); // close sheet
+    retake();
+  }
+
+  // ── Camera helpers ──────────────────────────────────────────────
+
+  Future<void> _pauseCamera() async {
+    try {
+      await cameraController?.pausePreview();
+    } catch (_) {}
+  }
+
+  void _resumeCamera() {
+    try {
+      cameraController?.resumePreview();
+    } catch (_) {}
+  }
+
+  // ── Privacy ─────────────────────────────────────────────────────
+
   Future<bool> _ensureConsent() async {
-    if (_settingsRepository.hasPrivacyConsent) {
-      return true;
-    }
+    if (_settingsRepository.hasPrivacyConsent) return true;
 
     final accepted = await Get.dialog<bool>(
       AlertDialog(
         title: const Text('Privacy Notice'),
         content: const Text(
-          'Your image may be retained in abuse monitoring logs for up to 30 days. Continue?',
+          'Your image may be retained in abuse monitoring logs '
+          'for up to 30 days. Continue?',
         ),
         actions: [
           TextButton(
@@ -201,7 +267,6 @@ class ScannerController extends GetxController {
       await _settingsRepository.setPrivacyConsent(true);
       return true;
     }
-
     return false;
   }
 }

@@ -1,3 +1,4 @@
+import 'dart:developer' as developer;
 import '../../core/constants/app_config.dart';
 import '../../core/network/api_client.dart';
 import '../../data/models/nutrition_result.dart';
@@ -19,11 +20,23 @@ class NutritionService {
     required String timezone,
     required DateTime clientTimestamp,
   }) async {
+    developer.log(
+      '[NutritionService] useMockApi=${AppConfig.useMockApi}, '
+      'apiBaseUrl=${AppConfig.apiBaseUrl}, '
+      'hasSecret=${AppConfig.appProxySecret.isNotEmpty}',
+    );
+
     if (AppConfig.useMockApi) {
+      developer.log('[NutritionService] Using mock API');
       return _mockResult(imageBase64);
     }
 
     final token = await _tokenProvider.getToken();
+    developer.log(
+      '[NutritionService] Calling ${AppConfig.apiBaseUrl}/api/vision/analyze '
+      '(base64 len=${imageBase64.length})',
+    );
+
     final response = await _apiClient.postJson(
       '${AppConfig.apiBaseUrl}/api/vision/analyze',
       token: token,
@@ -37,6 +50,7 @@ class NutritionService {
       appSecret: AppConfig.appProxySecret,
     );
 
+    developer.log('[NutritionService] Response: $response');
     return NutritionResult.fromJson(response);
   }
 

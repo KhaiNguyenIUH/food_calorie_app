@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:developer' as developer;
 import 'package:http/http.dart' as http;
 
 class ApiClient {
@@ -19,10 +20,17 @@ class ApiClient {
       if (appSecret != null && appSecret.isNotEmpty) 'x-app-secret': appSecret,
     };
 
+    developer.log('[ApiClient] POST $uri');
+
     final response = await _client.post(
       uri,
       headers: headers,
       body: jsonEncode(body),
+    );
+
+    developer.log(
+      '[ApiClient] Response: ${response.statusCode} '
+      '${response.body.length > 500 ? response.body.substring(0, 500) : response.body}',
     );
 
     if (response.statusCode == 429) {
